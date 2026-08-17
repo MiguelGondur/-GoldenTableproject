@@ -10,11 +10,9 @@ total sobre su historial y beneficios.
 
 ## Equipo
 
-- [Integrante 1] — [rol]
-- [Integrante 2] — [rol]
-- [Integrante 3] — [rol]
-
-_(Completar con los nombres reales del equipo #3)_
+- [Miguel Gonzalez] 
+- [Juan David Rodriguez] 
+- [Miguel Salazar] 
 
 ## Épicas del proyecto
 
