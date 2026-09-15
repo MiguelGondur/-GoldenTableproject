@@ -12,6 +12,7 @@ from fastapi import FastAPI, Query
 
 from src.api.models import EstadoMesa, Mesa
 from src.api.routers import billetera
+from src.api.routers import usuarios
 
 app = FastAPI(
     title="GoldenTable API",
@@ -19,6 +20,7 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(billetera.router)
+app.include_router(usuarios.router)
 
 # Datos de ejemplo en memoria — placeholder hasta integrar base de datos real.
 MESAS_DB = [
