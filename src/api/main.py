@@ -11,12 +11,14 @@ from datetime import date as date_type
 from fastapi import FastAPI, Query
 
 from src.api.models import EstadoMesa, Mesa
+from src.api.routers import billetera
 
 app = FastAPI(
     title="GoldenTable API",
     description="API de reservas, fidelidad y billetera digital para casino físico.",
     version="0.1.0",
 )
+app.include_router(billetera.router)
 
 # Datos de ejemplo en memoria — placeholder hasta integrar base de datos real.
 MESAS_DB = [
