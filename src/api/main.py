@@ -11,27 +11,14 @@ from datetime import date as date_type
 from fastapi import FastAPI, Query
 
 from src.api.models import EstadoMesa, Mesa
-from src.api.routers import billetera
-from src.api.routers import fidelidad
-from src.api.routers import usuarios
+from src.api.routers import billetera, fidelidad, reservas, usuarios
+from src.api.store import MESAS_DB
 
 app = FastAPI(
     title="GoldenTable API",
     description="API de reservas, fidelidad y billetera digital para casino físico.",
     version="0.1.0",
 )
-app.include_router(billetera.router)
-app.include_router(fidelidad.router
-app.include_router(usuarios.router)
-
-# Datos de ejemplo en memoria — placeholder hasta integrar base de datos real.
-MESAS_DB = [
-    Mesa(id=1, capacidad=2, estado=EstadoMesa.DISPONIBLE, horario="18:00"),
-    Mesa(id=2, capacidad=4, estado=EstadoMesa.DISPONIBLE, horario="18:00"),
-    Mesa(id=3, capacidad=4, estado=EstadoMesa.RESERVADA, horario="19:00"),
-    Mesa(id=4, capacidad=6, estado=EstadoMesa.DISPONIBLE, horario="19:00"),
-    Mesa(id=5, capacidad=2, estado=EstadoMesa.OCUPADA, horario="20:00"),
-]
 
 
 @app.get("/")
@@ -64,3 +51,9 @@ def consultar_disponibilidad(
         if mesa.estado == EstadoMesa.DISPONIBLE and mesa.horario == hora
     ]
     return mesas_disponibles
+
+
+app.include_router(usuarios.router)
+app.include_router(billetera.router)
+app.include_router(reservas.router)
+app.include_router(fidelidad.router)
