@@ -6,153 +6,120 @@ HU-05: Canje de puntos por beneficios (REQ-FUNC-005)
 HU-11: Límites de autoexclusión (REQ-FUNC-011)
 """
 
-from datetime import date as date_type
+import uuid
+from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/fidelidad", tags=["fidelidad"])
 
-# Almacenamiento en memoria — placeholder hasta integrar base de datos real.
-PUNTOS_DB: dict[str, int] = {}
-LIMITES_DB: dict[str, float] = {}
-GASTO_DIARIO_DB: dict[str, dict[date_type, float]] = {}
-
-# 1 punto por cada 1000 pesos gastados/recargados (regla simple, ajustable).
-PESOS_POR_PUNTO = 1000
-
-# Catálogo de beneficios canjeables: nombre -> costo en puntos.
-CATALOGO_BENEFICIOS: dict[str, int] = {
-    "bebida_gratis": 50,
-    "descuento_10": 100,
-    "cena_vip": 300,
+# Saldo de puntos por cliente — placeholder hasta integrar base de datos real.
+# "cliente-demo" arranca con 500 puntos para poder probar el flujo end-to-end.
+PUNTOS_DB: dict[str, int] = {
+    "cliente-demo": 500,
 }
 
+# Autoexclusiones activas por cliente: cliente_id -> fecha en la que termina el bloqueo.
+AUTOEXCLUSION_DB: dict[str, date] = {}
 
-class AcumulacionRequest(BaseModel):
+PUNTOS_POR_PESO = 0.01  # 1 punto por cada $100 de consumo (regla simple para REQ-FUNC-004)
+
+
+class ConsumoRequest(BaseModel):
     cliente_id: str
-    monto_gastado: float = Field(..., gt=0, description="Monto de la transacción que genera puntos")
+    monto_consumo: float = Field(..., gt=0)
 
 
-class PuntosFidelidad(BaseModel):
+class PuntosAcreditados(BaseModel):
     cliente_id: str
-    puntos_ganados: int
+    puntos_acreditados: int
     puntos_totales: int
 
 
 class CanjeRequest(BaseModel):
     cliente_id: str
     beneficio: str
+    costo_en_puntos: int = Field(..., gt=0)
 
 
-class CanjeResponse(BaseModel):
-    cliente_id: str
+class CanjeConfirmado(BaseModel):
+    cupon: str
     beneficio: str
-    puntos_usados: int
     puntos_restantes: int
 
 
-class LimiteRequest(BaseModel):
+class AutoexclusionRequest(BaseModel):
     cliente_id: str
-    limite_diario: float = Field(..., gt=0, description="Monto máximo que el cliente se permite gastar por día")
+    dias: int = Field(..., gt=0, description="Duración del bloqueo en días")
 
 
-class LimiteResponse(BaseModel):
+class AutoexclusionConfirmada(BaseModel):
     cliente_id: str
-    limite_diario: float
+    bloqueado_hasta: date
 
 
-class RegistroGastoRequest(BaseModel):
-    cliente_id: str
-    monto: float = Field(..., gt=0)
-
-
-class RegistroGastoResponse(BaseModel):
-    cliente_id: str
-    permitido: bool
-    gastado_hoy: float
-    limite_diario: float
-
-
-@router.post("/acumular", response_model=PuntosFidelidad)
-def acumular_puntos(datos: AcumulacionRequest):
-    """
-    HU-04: suma puntos de fidelidad automáticamente según el monto de una
-    transacción (recarga o consumo) del cliente.
-    """
-    puntos_ganados = int(datos.monto_gastado // PESOS_POR_PUNTO)
-    puntos_actuales = PUNTOS_DB.get(datos.cliente_id, 0)
-    nuevos_puntos_totales = puntos_actuales + puntos_ganados
-    PUNTOS_DB[datos.cliente_id] = nuevos_puntos_totales
-
-    return PuntosFidelidad(
-        cliente_id=datos.cliente_id,
-        puntos_ganados=puntos_ganados,
-        puntos_totales=nuevos_puntos_totales,
-    )
-
-
-@router.post("/canjear", response_model=CanjeResponse)
-def canjear_puntos(datos: CanjeRequest):
-    """
-    HU-05: canjea los puntos acumulados del cliente por un beneficio del
-    catálogo, siempre que tenga puntos suficientes.
-    """
-    if datos.beneficio not in CATALOGO_BENEFICIOS:
-        raise HTTPException(status_code=404, detail="Beneficio no existe en el catálogo")
-
-    costo = CATALOGO_BENEFICIOS[datos.beneficio]
-    puntos_actuales = PUNTOS_DB.get(datos.cliente_id, 0)
-
-    if puntos_actuales < costo:
-        raise HTTPException(status_code=402, detail="Puntos insuficientes para este beneficio")
-
-    puntos_restantes = puntos_actuales - costo
-    PUNTOS_DB[datos.cliente_id] = puntos_restantes
-
-    return CanjeResponse(
-        cliente_id=datos.cliente_id,
-        beneficio=datos.beneficio,
-        puntos_usados=costo,
-        puntos_restantes=puntos_restantes,
-    )
-
-
-@router.post("/limite", response_model=LimiteResponse)
-def definir_limite(datos: LimiteRequest):
-    """
-    HU-11: permite al cliente fijar (o actualizar) su límite de gasto
-    diario, como herramienta de juego responsable / autoexclusión.
-    """
-    LIMITES_DB[datos.cliente_id] = datos.limite_diario
-    return LimiteResponse(cliente_id=datos.cliente_id, limite_diario=datos.limite_diario)
-
-
-@router.post("/gasto", response_model=RegistroGastoResponse)
-def registrar_gasto(datos: RegistroGastoRequest):
-    """
-    HU-11: registra un intento de gasto del cliente y valida contra su
-    límite diario de autoexclusión. Si no ha definido un límite, se
-    permite el gasto sin restricción (todavía no activó la función).
-    """
-    limite_diario = LIMITES_DB.get(datos.cliente_id)
-    hoy = date_type.today()
-    gastos_cliente = GASTO_DIARIO_DB.setdefault(datos.cliente_id, {})
-    gastado_hoy = gastos_cliente.get(hoy, 0.0)
-
-    if limite_diario is not None and (gastado_hoy + datos.monto) > limite_diario:
-        return RegistroGastoResponse(
-            cliente_id=datos.cliente_id,
-            permitido=False,
-            gastado_hoy=gastado_hoy,
-            limite_diario=limite_diario,
+def _verificar_autoexclusion(cliente_id: str) -> None:
+    """Lanza HTTP 403 si el cliente tiene una autoexclusión activa (HU-11)."""
+    fecha_fin = AUTOEXCLUSION_DB.get(cliente_id)
+    if fecha_fin and date.today() < fecha_fin:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cliente autoexcluido hasta {fecha_fin.isoformat()}. Acceso bloqueado.",
         )
 
-    gastos_cliente[hoy] = gastado_hoy + datos.monto
 
-    return RegistroGastoResponse(
+@router.post("/acumular", response_model=PuntosAcreditados)
+def acumular_puntos(datos: ConsumoRequest):
+    """
+    HU-04: acredita puntos automáticamente según el consumo registrado
+    del cliente. Respeta cualquier autoexclusión activa (HU-11): un
+    cliente excluido no puede seguir acumulando puntos.
+    """
+    _verificar_autoexclusion(datos.cliente_id)
+
+    puntos_nuevos = int(datos.monto_consumo * PUNTOS_POR_PESO)
+    puntos_actuales = PUNTOS_DB.get(datos.cliente_id, 0)
+    PUNTOS_DB[datos.cliente_id] = puntos_actuales + puntos_nuevos
+
+    return PuntosAcreditados(
         cliente_id=datos.cliente_id,
-        permitido=True,
-        gastado_hoy=gastos_cliente[hoy],
-        limite_diario=limite_diario if limite_diario is not None else 0.0,
+        puntos_acreditados=puntos_nuevos,
+        puntos_totales=PUNTOS_DB[datos.cliente_id],
     )
+
+
+@router.post("/canje", response_model=CanjeConfirmado)
+def canjear_puntos(datos: CanjeRequest):
+    """
+    HU-05: canjea los puntos del cliente por un beneficio, descuenta el
+    saldo de puntos y genera un cupón digital único.
+    """
+    _verificar_autoexclusion(datos.cliente_id)
+
+    puntos_actuales = PUNTOS_DB.get(datos.cliente_id, 0)
+
+    if puntos_actuales < datos.costo_en_puntos:
+        raise HTTPException(status_code=409, detail="Puntos insuficientes para este canje.")
+
+    PUNTOS_DB[datos.cliente_id] = puntos_actuales - datos.costo_en_puntos
+    cupon = str(uuid.uuid4())[:8].upper()
+
+    return CanjeConfirmado(
+        cupon=cupon,
+        beneficio=datos.beneficio,
+        puntos_restantes=PUNTOS_DB[datos.cliente_id],
+    )
+
+
+@router.post("/autoexclusion", response_model=AutoexclusionConfirmada)
+def establecer_autoexclusion(datos: AutoexclusionRequest):
+    """
+    HU-11: establece un período de autoexclusión para el cliente, para
+    promover el juego responsable. Una vez activo, no existe endpoint
+    para cancelarlo anticipadamente (por diseño, según el requisito).
+    """
+    fecha_fin = date.today() + timedelta(days=datos.dias)
+    AUTOEXCLUSION_DB[datos.cliente_id] = fecha_fin
+
+    return AutoexclusionConfirmada(cliente_id=datos.cliente_id, bloqueado_hasta=fecha_fin)
