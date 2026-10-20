@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Pruebas con cobertura (mínimo 80%, REQ-NFUNC-006)
+        run: python -m pytest --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+
+      - name: Smoke test (arrancar API y consultar /health)
+        run: |
+          uvicorn src.api.main:app --port 8000 &
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 1
+          done
+          echo "La API no respondió" && exit 1
+
+      - name: Empaquetar
+        if: always()
+        run: |
+          mkdir -p dist
+          zip -r dist/goldentable-api.zip src requirements.txt README.md -x "*/__pycache__/*"
+
+      - name: Subir paquete
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: goldentable-api
+          path: dist/goldentable-api.zip
+
+      - name: Subir reporte de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml

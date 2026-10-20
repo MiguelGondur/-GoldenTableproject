@@ -3,7 +3,7 @@ Endpoints del Programa de Fidelidad.
 
 HU-04: Acumulación automática de puntos (REQ-FUNC-004)
 HU-05: Canje de puntos por beneficios (REQ-FUNC-005)
-HU-11: Límites de autoexclusión (REQ-FUNC-011)
+HU-11: Límites de autoexclusión y de gasto diario (REQ-FUNC-011)
 """
 
 import uuid
@@ -12,46 +12,84 @@ from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from src.api.seguridad import esta_autoexcluido, verificar_autoexclusion
+from src.api.store import AUTOEXCLUSION_DB
+
 router = APIRouter(prefix="/fidelidad", tags=["fidelidad"])
 
-# Saldo de puntos por cliente — placeholder hasta integrar base de datos real.
-# "cliente-demo" arranca con 500 puntos para poder probar el flujo end-to-end.
-PUNTOS_DB: dict[str, int] = {
-    "cliente-demo": 500,
+# Se acredita 1 punto por cada $1.000 gastados (REQ-FUNC-004).
+PESOS_POR_PUNTO = 1000
+
+# Catálogo de beneficios canjeables y su costo en puntos (REQ-FUNC-005).
+BENEFICIOS: dict[str, int] = {
+    "bebida_gratis": 50,
+    "entrada_evento": 150,
+    "cena_vip": 300,
+    "noche_hotel": 500,
 }
 
-# Autoexclusiones activas por cliente: cliente_id -> fecha en la que termina el bloqueo.
-AUTOEXCLUSION_DB: dict[str, date] = {}
+# Almacenamiento en memoria — placeholder hasta integrar base de datos real.
+# "cliente-demo" arranca con 500 puntos para poder probar el flujo end-to-end.
+PUNTOS_DB: dict[str, int] = {"cliente-demo": 500}
+LIMITES_DIARIOS_DB: dict[str, float] = {}
+GASTO_DIARIO_DB: dict[tuple[str, date], float] = {}
 
-PUNTOS_POR_PESO = 0.01  # 1 punto por cada $100 de consumo (regla simple para REQ-FUNC-004)
 
-
-class ConsumoRequest(BaseModel):
+# --------------------------------------------------------------------- modelos
+class AcumularRequest(BaseModel):
     cliente_id: str
-    monto_consumo: float = Field(..., gt=0)
+    monto_gastado: float = Field(..., gt=0, description="Monto del consumo en pesos")
 
 
-class PuntosAcreditados(BaseModel):
+class PuntosAcumulados(BaseModel):
     cliente_id: str
-    puntos_acreditados: int
+    puntos_ganados: int
     puntos_totales: int
 
 
 class CanjeRequest(BaseModel):
     cliente_id: str
-    beneficio: str
-    costo_en_puntos: int = Field(..., gt=0)
+    beneficio: str = Field(..., description="Clave del beneficio del catálogo")
 
 
 class CanjeConfirmado(BaseModel):
     cupon: str
     beneficio: str
+    puntos_usados: int
     puntos_restantes: int
+
+
+class SaldoPuntos(BaseModel):
+    cliente_id: str
+    puntos: int
+
+
+class LimiteRequest(BaseModel):
+    cliente_id: str
+    limite_diario: float = Field(..., gt=0, description="Gasto máximo permitido por día")
+
+
+class LimiteDefinido(BaseModel):
+    cliente_id: str
+    limite_diario: float
+
+
+class GastoRequest(BaseModel):
+    cliente_id: str
+    monto: float = Field(..., gt=0)
+
+
+class GastoResultado(BaseModel):
+    cliente_id: str
+    permitido: bool
+    gastado_hoy: float
+    limite_diario: float | None = None
+    mensaje: str
 
 
 class AutoexclusionRequest(BaseModel):
     cliente_id: str
-    dias: int = Field(..., gt=0, description="Duración del bloqueo en días")
+    dias: int = Field(..., gt=0, le=3650, description="Duración del bloqueo en días")
 
 
 class AutoexclusionConfirmada(BaseModel):
@@ -59,67 +97,136 @@ class AutoexclusionConfirmada(BaseModel):
     bloqueado_hasta: date
 
 
-def _verificar_autoexclusion(cliente_id: str) -> None:
-    """Lanza HTTP 403 si el cliente tiene una autoexclusión activa (HU-11)."""
-    fecha_fin = AUTOEXCLUSION_DB.get(cliente_id)
-    if fecha_fin and date.today() < fecha_fin:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Cliente autoexcluido hasta {fecha_fin.isoformat()}. Acceso bloqueado.",
-        )
+class EstadoAutoexclusion(BaseModel):
+    cliente_id: str
+    activa: bool
+    bloqueado_hasta: date | None = None
 
 
-@router.post("/acumular", response_model=PuntosAcreditados)
-def acumular_puntos(datos: ConsumoRequest):
+# -------------------------------------------------------------------- endpoints
+@router.post("/acumular", response_model=PuntosAcumulados)
+def acumular_puntos(datos: AcumularRequest):
     """
-    HU-04: acredita puntos automáticamente según el consumo registrado
-    del cliente. Respeta cualquier autoexclusión activa (HU-11): un
-    cliente excluido no puede seguir acumulando puntos.
+    HU-04: acredita puntos automáticamente según el monto consumido
+    (1 punto por cada $1.000). Un cliente autoexcluido no acumula puntos.
     """
-    _verificar_autoexclusion(datos.cliente_id)
+    verificar_autoexclusion(datos.cliente_id)
 
-    puntos_nuevos = int(datos.monto_consumo * PUNTOS_POR_PESO)
-    puntos_actuales = PUNTOS_DB.get(datos.cliente_id, 0)
-    PUNTOS_DB[datos.cliente_id] = puntos_actuales + puntos_nuevos
+    puntos_ganados = int(datos.monto_gastado // PESOS_POR_PUNTO)
+    PUNTOS_DB[datos.cliente_id] = PUNTOS_DB.get(datos.cliente_id, 0) + puntos_ganados
 
-    return PuntosAcreditados(
+    return PuntosAcumulados(
         cliente_id=datos.cliente_id,
-        puntos_acreditados=puntos_nuevos,
+        puntos_ganados=puntos_ganados,
         puntos_totales=PUNTOS_DB[datos.cliente_id],
     )
 
 
-@router.post("/canje", response_model=CanjeConfirmado)
-def canjear_puntos(datos: CanjeRequest):
+@router.get("/puntos/{cliente_id}", response_model=SaldoPuntos)
+def consultar_puntos(cliente_id: str):
+    """Consulta el saldo de puntos del cliente (0 si aún no ha acumulado)."""
+    return SaldoPuntos(cliente_id=cliente_id, puntos=PUNTOS_DB.get(cliente_id, 0))
+
+
+@router.get("/beneficios", response_model=dict[str, int])
+def listar_beneficios():
+    """Catálogo de beneficios canjeables y su costo en puntos."""
+    return BENEFICIOS
+
+
+@router.post("/canjear", response_model=CanjeConfirmado)
+def canjear_beneficio(datos: CanjeRequest):
     """
-    HU-05: canjea los puntos del cliente por un beneficio, descuenta el
-    saldo de puntos y genera un cupón digital único.
+    HU-05: canjea puntos por un beneficio del catálogo. El costo lo define
+    el catálogo del sistema (no el cliente), se descuentan los puntos y se
+    genera un cupón digital único.
+
+    - 404 si el beneficio no existe.
+    - 402 si el cliente no tiene puntos suficientes.
     """
-    _verificar_autoexclusion(datos.cliente_id)
+    verificar_autoexclusion(datos.cliente_id)
+
+    costo = BENEFICIOS.get(datos.beneficio)
+    if costo is None:
+        raise HTTPException(status_code=404, detail="El beneficio solicitado no existe.")
 
     puntos_actuales = PUNTOS_DB.get(datos.cliente_id, 0)
+    if puntos_actuales < costo:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Puntos insuficientes: se necesitan {costo} y el cliente tiene {puntos_actuales}.",
+        )
 
-    if puntos_actuales < datos.costo_en_puntos:
-        raise HTTPException(status_code=409, detail="Puntos insuficientes para este canje.")
-
-    PUNTOS_DB[datos.cliente_id] = puntos_actuales - datos.costo_en_puntos
-    cupon = str(uuid.uuid4())[:8].upper()
-
+    PUNTOS_DB[datos.cliente_id] = puntos_actuales - costo
     return CanjeConfirmado(
-        cupon=cupon,
+        cupon=uuid.uuid4().hex[:8].upper(),
         beneficio=datos.beneficio,
+        puntos_usados=costo,
         puntos_restantes=PUNTOS_DB[datos.cliente_id],
+    )
+
+
+@router.post("/limite", response_model=LimiteDefinido)
+def definir_limite_diario(datos: LimiteRequest):
+    """HU-11: el cliente define su límite de gasto diario (juego responsable)."""
+    LIMITES_DIARIOS_DB[datos.cliente_id] = datos.limite_diario
+    return LimiteDefinido(cliente_id=datos.cliente_id, limite_diario=datos.limite_diario)
+
+
+@router.post("/gasto", response_model=GastoResultado)
+def registrar_gasto(datos: GastoRequest):
+    """
+    HU-11: registra un gasto del día si no supera el límite diario del
+    cliente. Si lo supera, responde `permitido: false` y el gasto NO queda
+    registrado. Sin límite definido, el gasto siempre se permite.
+    """
+    verificar_autoexclusion(datos.cliente_id)
+
+    clave = (datos.cliente_id, date.today())
+    gastado_hoy = GASTO_DIARIO_DB.get(clave, 0.0)
+    limite = LIMITES_DIARIOS_DB.get(datos.cliente_id)
+
+    if limite is not None and gastado_hoy + datos.monto > limite:
+        return GastoResultado(
+            cliente_id=datos.cliente_id,
+            permitido=False,
+            gastado_hoy=gastado_hoy,
+            limite_diario=limite,
+            mensaje="Gasto rechazado: supera el límite diario definido por el cliente.",
+        )
+
+    GASTO_DIARIO_DB[clave] = gastado_hoy + datos.monto
+    return GastoResultado(
+        cliente_id=datos.cliente_id,
+        permitido=True,
+        gastado_hoy=GASTO_DIARIO_DB[clave],
+        limite_diario=limite,
+        mensaje="Gasto registrado.",
     )
 
 
 @router.post("/autoexclusion", response_model=AutoexclusionConfirmada)
 def establecer_autoexclusion(datos: AutoexclusionRequest):
     """
-    HU-11: establece un período de autoexclusión para el cliente, para
-    promover el juego responsable. Una vez activo, no existe endpoint
-    para cancelarlo anticipadamente (por diseño, según el requisito).
+    HU-11: establece un periodo de autoexclusión. Una vez activo no se puede
+    cancelar ni acortar: si el cliente envía un periodo más corto que el
+    vigente, se conserva el más largo (sin reversión anticipada).
     """
-    fecha_fin = date.today() + timedelta(days=datos.dias)
-    AUTOEXCLUSION_DB[datos.cliente_id] = fecha_fin
+    nueva_fecha_fin = date.today() + timedelta(days=datos.dias)
+    fecha_vigente = AUTOEXCLUSION_DB.get(datos.cliente_id)
+    if fecha_vigente is not None and fecha_vigente > nueva_fecha_fin:
+        nueva_fecha_fin = fecha_vigente
 
-    return AutoexclusionConfirmada(cliente_id=datos.cliente_id, bloqueado_hasta=fecha_fin)
+    AUTOEXCLUSION_DB[datos.cliente_id] = nueva_fecha_fin
+    return AutoexclusionConfirmada(cliente_id=datos.cliente_id, bloqueado_hasta=nueva_fecha_fin)
+
+
+@router.get("/autoexclusion/{cliente_id}", response_model=EstadoAutoexclusion)
+def consultar_autoexclusion(cliente_id: str):
+    """Consulta si el cliente tiene una autoexclusión vigente."""
+    activa = esta_autoexcluido(cliente_id)
+    return EstadoAutoexclusion(
+        cliente_id=cliente_id,
+        activa=activa,
+        bloqueado_hasta=AUTOEXCLUSION_DB.get(cliente_id) if activa else None,
+    )
