@@ -21,7 +21,7 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(billetera.router)
-app.include_router(fidelidad.router
+app.include_router(fidelidad.router)
 app.include_router(usuarios.router)
 
 # Datos de ejemplo en memoria — placeholder hasta integrar base de datos real.
