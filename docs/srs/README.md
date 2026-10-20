@@ -1,4 +1,3 @@
-# Documentación SRS
+# SRS
 
-Coloca aquí el archivo `GoldenTable_SRS.docx` (o su versión en PDF/Markdown)
-junto con las versiones posteriores del documento de requisitos.
+El documento de requisitos es [`GoldenTable.docx`](../../GoldenTable.docx), en la raíz del repositorio.
