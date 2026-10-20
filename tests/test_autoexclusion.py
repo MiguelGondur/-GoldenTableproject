@@ -24,11 +24,16 @@ def test_autoexclusion_bloquea_acumulacion():
     assert r.status_code == 403
 
 
-def test_autoexclusion_bloquea_canje_gasto_y_recarga():
+def test_autoexclusion_bloquea_canje_gasto_recarga_y_reserva():
     excluir()
     assert client.post("/fidelidad/canjear", json={"cliente_id": CLIENTE, "beneficio": "bebida_gratis"}).status_code == 403
     assert client.post("/fidelidad/gasto", json={"cliente_id": CLIENTE, "monto": 10}).status_code == 403
     assert client.post("/billetera/recarga", json={"cliente_id": CLIENTE, "monto": 100, "metodo_pago": "tarjeta"}).status_code == 403
+    r = client.post(
+        "/reservas",
+        json={"cliente_id": CLIENTE, "mesa_id": 1, "fecha": "2030-01-01", "hora": "18:00"},
+    )
+    assert r.status_code == 403
 
 
 def test_cliente_sin_autoexclusion_opera_normal():

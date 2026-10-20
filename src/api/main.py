@@ -11,7 +11,7 @@ from fastapi import FastAPI, Query
 
 from src.api import store
 from src.api.models import PATRON_HORA, Mesa
-from src.api.routers import billetera, fidelidad, usuarios
+from src.api.routers import billetera, fidelidad, reservas, usuarios
 
 app = FastAPI(
     title="GoldenTable API",
@@ -21,6 +21,7 @@ app = FastAPI(
 app.include_router(usuarios.router)
 app.include_router(billetera.router)
 app.include_router(fidelidad.router)
+app.include_router(reservas.router)
 
 
 @app.get("/")
