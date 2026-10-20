@@ -16,6 +16,8 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from src.api.seguridad import verificar_autoexclusion
+
 router = APIRouter(prefix="/billetera", tags=["billetera"])
 
 # Almacenamiento en memoria — placeholder hasta integrar base de datos real.
@@ -65,6 +67,7 @@ def recargar_saldo(datos: RecargaRequest):
     Los montos negativos o en cero son rechazados automáticamente por
     la validación `gt=0` del campo `monto` (FastAPI responde HTTP 422).
     """
+    verificar_autoexclusion(datos.cliente_id)
     saldo_actual = BILLETERAS_DB.get(datos.cliente_id, 0.0)
     nuevo_saldo = saldo_actual + datos.monto
     BILLETERAS_DB[datos.cliente_id] = nuevo_saldo
