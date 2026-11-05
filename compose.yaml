@@ -1,0 +1,51 @@
+# GoldenTable: base de datos + backend + frontend.
+#   docker compose up -d --build
+# Los valores por defecto funcionan sin crear ningún archivo .env.
+name: goldentable
+
+services:
+  db:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-goldentable}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-goldentable}
+      POSTGRES_DB: ${POSTGRES_DB:-goldentable}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-goldentable}:${POSTGRES_PASSWORD:-goldentable}@db:5432/${POSTGRES_DB:-goldentable}
+      JWT_SECRET: ${JWT_SECRET:-goldentable-dev-secret-cambiar-en-produccion}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+      CASINO_TZ: ${CASINO_TZ:-America/Bogota}
+      SEED_DATA: ${SEED_DATA:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
