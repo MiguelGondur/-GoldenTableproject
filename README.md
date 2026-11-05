@@ -2,107 +2,150 @@
 
 [![CI](https://github.com/MiguelGondur/-GoldenTableproject/actions/workflows/ci.yml/badge.svg)](https://github.com/MiguelGondur/-GoldenTableproject/actions/workflows/ci.yml)
 
-App de reservas, fidelidad y billetera digital para casino físico.
+**GoldenTable** es una aplicación web para un casino físico que centraliza las reservas de mesas, el programa de fidelidad (acumulación y canje de puntos), la billetera digital del cliente y las reglas de juego responsable (verificación de edad y documento, límites de gasto y autoexclusión). Reduce las filas en caja y los errores de conciliación, y le da al cliente visibilidad sobre su historial y beneficios. Está construida a partir del documento de requisitos [`GoldenTable.docx`](GoldenTable.docx) (ISO/IEC/IEEE 29148).
 
-GoldenTable centraliza la gestión de reservas de mesas, el programa de
-fidelidad (acumulación y canje de puntos), la billetera digital del cliente
-y las reglas de juego responsable (verificación de edad, límites y
-autoexclusión), reduciendo filas en caja y dando al cliente visibilidad
-total sobre su historial y beneficios.
+- **Tablero (GitHub Projects):** https://github.com/users/MiguelGondur/projects/1
 
 ## Equipo
+
+Curso Ingeniería de Software, UPB — equipo **GoldenTable**.
 
 - Miguel Gonzalez
 - Juan David Rodriguez
 - Miguel Salazar
 
-Curso: Ingeniería de Software — UPB. Equipo **GoldenTable**.
+## Tecnologías (versiones)
 
-## Épicas y estado
+| Capa | Tecnología |
+|---|---|
+| Backend | Python 3.12.7, FastAPI 0.115.0, Pydantic 2.9.2, SQLAlchemy 2.0.36, PyJWT 2.9.0, Uvicorn 0.30.6 |
+| Base de datos | PostgreSQL 16.4 (imagen `postgres:16.4-alpine`) |
+| Frontend | HTML/CSS/JavaScript propio servido por nginx 1.27.2 (`nginx:1.27.2-alpine`) |
+| Contenedores | Docker y Docker Compose v2 |
+| Pruebas / CI | Pytest 8.3.3 + pytest-cov (cobertura > 80 %), GitHub Actions |
+| Documentación de la API | OpenAPI 3.1 (`openapi.yaml`) |
 
-| Épica | Historias | Estado |
-|---|---|---|
-| Gestión de Reservas | HU-01 disponibilidad, HU-02 reserva, HU-03 check-in | Implementado |
-| Programa de Fidelidad | HU-04 acumulación, HU-05 canje | Implementado |
-| Billetera Digital | HU-06 recarga, HU-07 validación de saldo, HU-08 reportes CSV, HU-12 historial | Implementado |
-| Notificaciones y Perfil | HU-09 notificaciones push, HU-10 verificación de edad/documento, HU-11 límites y autoexclusión | Implementado |
+## Cómo ejecutarlo (Docker, desde un clon limpio)
 
-Trazabilidad completa requisito → historia → issue → código → pruebas → PR en
-[`docs/TRAZABILIDAD.md`](docs/TRAZABILIDAD.md). Limitaciones conocidas en
-[`docs/DEUDA_TECNICA.md`](docs/DEUDA_TECNICA.md). El SRS está en
-[`GoldenTable.docx`](GoldenTable.docx).
-
-## Stack técnico
-
-- Python 3.12 / FastAPI / Pydantic v2
-- Pytest + pytest-cov (cobertura mínima 80 %, REQ-NFUNC-006)
-- GitHub Actions (CI)
-- Datos en memoria (placeholder; ver deuda técnica)
-
-## Cómo ejecutar el proyecto
+Único requisito: **Docker** con Compose v2. No hace falta crear ningún `.env`.
 
 ```bash
 git clone https://github.com/MiguelGondur/-GoldenTableproject.git goldentable
 cd goldentable
-python -m venv venv
-source venv/bin/activate        # En Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn src.api.main:app --reload
+docker compose up -d --build
 ```
 
-API en `http://127.0.0.1:8000`, documentación interactiva (Swagger) en
-`http://127.0.0.1:8000/docs`.
+Espera ~30 segundos a que los tres servicios (`db`, `backend`, `frontend`) queden sanos (`docker compose ps`). Los usuarios y datos de ejemplo se crean solos en el primer arranque.
 
-## Pruebas y cobertura
-
-```bash
-python -m pytest --cov=src --cov-report=term-missing --cov-fail-under=80
-```
-
-El workflow `.github/workflows/ci.yml` ejecuta las pruebas, el smoke test de
-`/health` y empaqueta la API en cada push a `main` y cada pull request.
-
-## Demo
-
-Con la API corriendo (o sin ella, en memoria):
-
-```bash
-python scripts/demo.py                          # en memoria
-python scripts/demo.py --url http://127.0.0.1:8000   # contra el servidor
-```
-
-Recorre: registro → recarga → disponibilidad → reserva → recordatorio →
-check-in → puntos → canje → límite de gasto → autoexclusión.
-
-## Endpoints
-
-| Método y ruta | Historia |
+| Servicio | URL |
 |---|---|
-| `GET /health` | — |
-| `GET /disponibilidad?fecha=&hora=` | HU-01 |
-| `POST /reservas` · `GET /reservas` · `GET /reservas/{codigo}` | HU-02 |
-| `POST /reservas/checkin` | HU-03 |
-| `POST /fidelidad/acumular` · `GET /fidelidad/puntos/{cliente}` | HU-04 |
-| `GET /fidelidad/beneficios` · `POST /fidelidad/canjear` | HU-05 |
-| `POST /billetera/recarga` | HU-06 |
-| `GET /billetera/validar` | HU-07 |
-| `GET /billetera/reportes` (CSV) | HU-08 |
-| `GET /billetera/{cliente_id}` | HU-12 |
-| `POST /notificaciones/enviar` · `POST /notificaciones/reservas-proximas` · `GET /notificaciones/{cliente}` | HU-09 |
-| `POST /usuarios/registro` · `GET /usuarios/{documento}` | HU-10 |
-| `POST /fidelidad/limite` · `POST /fidelidad/gasto` · `POST/GET /fidelidad/autoexclusion` | HU-11 |
+| **Frontend (aplicación web)** | http://localhost:8080 |
+| **API (backend)** | http://localhost:8000 |
+| Documentación interactiva (Swagger) | http://localhost:8000/docs |
+| Especificación OpenAPI | archivo [`openapi.yaml`](openapi.yaml) en la raíz (también en http://localhost:8000/openapi.json) |
 
-## Flujo de trabajo (Git)
+Para apagar: `docker compose down` (añade `-v` para borrar también los datos).
 
-- Nunca se hace commit directo a `main`: rama `feature/hu-XX-nombre` → Pull Request con `Closes #N`.
-- Commits con Conventional Commits y el ID del requisito: `feat(reservas): REQ-FUNC-002 ...`.
+## Variables de entorno
 
-## Estructura
+Todas son opcionales; estos son los valores por defecto (ver [`.env.example`](.env.example)).
+
+| Variable | Por defecto | Para qué sirve |
+|---|---|---|
+| `POSTGRES_USER` | `goldentable` | Usuario de la base de datos |
+| `POSTGRES_PASSWORD` | `goldentable` | Contraseña de la base de datos |
+| `POSTGRES_DB` | `goldentable` | Nombre de la base de datos |
+| `JWT_SECRET` | `goldentable-dev-secret-cambiar-en-produccion` | Clave de firma de los tokens JWT |
+| `JWT_EXPIRE_MINUTES` | `60` | Duración de la sesión |
+| `CASINO_TZ` | `America/Bogota` | Zona horaria del casino |
+| `SEED_DATA` | `true` | Carga los datos de ejemplo al arrancar |
+| `BACKEND_PORT` | `8000` | Puerto del API en el host |
+| `FRONTEND_PORT` | `8080` | Puerto del frontend en el host |
+
+La base de datos es un servicio de Compose (no hay credenciales en la nube).
+
+## Usuarios de prueba
+
+Contraseña de **todos**: `Casino2026!`
+
+| Usuario | Rol | Qué puede hacer |
+|---|---|---|
+| `cliente1` | Cliente | Reservar, ver puntos y canjear, billetera, notificaciones, límites y autoexclusión (500 puntos, saldo $150.000) |
+| `cliente2` | Cliente | Igual; tiene la reserva de ejemplo `DEMO0001` (120 puntos, saldo $50.000) |
+| `anfitrion` | Anfitrión | Ver las reservas del día, hacer check-in, enviar notificaciones y recordatorios |
+| `cajero` | Cajero | Validar saldo en caja, registrar consumos (acredita puntos), recargas en caja |
+| `gerente` | Gerente | Todo lo anterior más reportes de transacciones (CSV) |
+
+También se pueden crear clientes nuevos desde la pantalla **Crear cuenta** (mayores de 18 años; documento de 6 a 10 dígitos).
+
+## Datos de ejemplo (existen desde el primer arranque)
+
+- **23 mesas** con franjas de 18:00 a 22:00 (ids 1 a 8 históricos y 9 a 23 por franja y capacidad); la mesa 3 aparece reservada y la 5 ocupada a modo de ejemplo.
+- **5 usuarios** (tabla anterior), con puntos, billetera e historial de recargas para los clientes.
+- **Reserva de ejemplo `DEMO0001`** (cliente2, mesa 4, 19:00, hoy) para practicar el check-in como anfitrión.
+- Catálogo de beneficios: `bebida_gratis` (50 pts), `entrada_evento` (150), `cena_vip` (300), `noche_hotel` (500).
+
+## Flujos principales y requisitos que implementan
+
+| Flujo en la app | Requisito (SRS) | Quién |
+|---|---|---|
+| Consultar mesas por fecha y hora | REQ-FUNC-001 | cliente |
+| Reservar una mesa y recibir código de confirmación | REQ-FUNC-002 | cliente |
+| Ver las reservas del día y hacer check-in con el código | REQ-FUNC-003 | anfitrión |
+| Registrar un consumo y acreditar puntos | REQ-FUNC-004 | cajero |
+| Canjear puntos y recibir un cupón | REQ-FUNC-005 | cliente |
+| Recargar saldo | REQ-FUNC-006 | cliente / cajero |
+| Consultar saldo y últimas 20 transacciones | REQ-FUNC-007 | cliente |
+| Validar saldo en caja | REQ-FUNC-008 | cajero |
+| Notificaciones push (reserva próxima, promoción, vencimiento) | REQ-FUNC-009 | anfitrión/gerente envían; cliente recibe |
+| Registro con verificación de edad y documento | REQ-FUNC-010 | cliente |
+| Límite de gasto y autoexclusión | REQ-FUNC-011 | cliente |
+| Reporte de transacciones en CSV | REQ-FUNC-012 | gerente |
+| Bloqueo de cuenta tras 5 intentos fallidos | REQ-NFUNC-003 | todos |
+
+Trazabilidad completa en [`docs/TRAZABILIDAD.md`](docs/TRAZABILIDAD.md).
+
+## Autenticación (JWT)
+
+`POST /auth/login` devuelve un token; todas las rutas, salvo `/health`, `/auth/login` y `/usuarios/registro`, exigen `Authorization: Bearer <token>` y responden **401** sin él. El frontend guarda el token al iniciar sesión, lo envía en cada petición protegida y lo borra al cerrar sesión (o si el API responde 401). Cinco intentos fallidos bloquean la cuenta 15 minutos (423).
+
+## Pruebas
+
+Las pruebas usan una base PostgreSQL real (nombre con "test"):
+
+```bash
+pip install -r requirements-dev.txt
+export DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/goldentable_test
+python -m pytest --cov=src --cov-fail-under=80
+```
+
+El workflow `.github/workflows/ci.yml` ejecuta en cada push y pull request: (1) las pruebas con cobertura contra PostgreSQL, y (2) `docker compose up -d --build` desde cero, comprueba que no haya servicios caídos, que el frontend y el API respondan, recorre todos los flujos con `scripts/demo.py` y verifica que cada ruta de `openapi.yaml` exista.
+
+Si cambias un endpoint, regenera la especificación: `python scripts/export_openapi.py`.
+
+## Demo por línea de comandos
+
+Con el sistema levantado: `python scripts/demo.py` (necesita `pip install httpx`).
+
+## Estructura del repositorio
 
 ```
-.github/workflows/ci.yml
-docs/            # SRS, trazabilidad, deuda técnica
-scripts/demo.py
-src/api/         # main.py, models.py, store.py, seguridad.py, routers/
-tests/
+compose.yaml               Sistema completo (db + backend + frontend)
+openapi.yaml               Especificación OpenAPI 3.1
+backend/Dockerfile         Imagen del API
+frontend/                  Dockerfile, nginx.conf y la aplicación web (public/)
+src/api/                   API FastAPI: routers/, orm.py, auth.py, seed.py ...
+tests/                     Pruebas (pytest)
+scripts/                   export_openapi.py, demo.py, check_openapi_live.py
+docs/                      Trazabilidad, diagramas UML, metodología, deuda técnica
+.github/workflows/ci.yml   Integración continua
+GoldenTable.docx           Documento de requisitos (SRS)
 ```
+
+## Documentación adicional
+
+- [Diagramas de secuencia UML](docs/DIAGRAMAS_SECUENCIA.md)
+- [Metodología ágil y flujo de Git](docs/METODOLOGIA_Y_FLUJO_GIT.md)
+- [Trazabilidad requisito → HU → issue → código → pruebas → PR](docs/TRAZABILIDAD.md)
+- [Deuda técnica y limitaciones](docs/DEUDA_TECNICA.md)
+- [Guion para la defensa](docs/GUION_DEFENSA.md)
