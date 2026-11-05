@@ -1,0 +1,1952 @@
+openapi: 3.1.0
+info:
+  title: GoldenTable API
+  description: 'API de reservas, fidelidad y billetera digital para casino físico.
+    Autenticación con JWT: obtén el token en `POST /auth/login` y envíalo en `Authorization:
+    Bearer <token>`.'
+  version: 1.0.0
+paths:
+  /auth/login:
+    post:
+      tags:
+      - auth
+      summary: Iniciar sesión y obtener un token JWT
+      description: "Valida las credenciales y emite un token JWT (`Authorization:\
+        \ Bearer ...`).\n\n- 401 si usuario o contraseña son incorrectos.\n- 423 si\
+        \ la cuenta está bloqueada: se bloquea durante\n  `MINUTOS_BLOQUEO` minutos\
+        \ tras 5 intentos fallidos consecutivos."
+      operationId: login_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '423':
+          description: Cuenta bloqueada temporalmente por intentos fallidos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/me:
+    get:
+      tags:
+      - auth
+      summary: Datos del usuario autenticado
+      description: Devuelve el usuario dueño del token (sirve para validar la sesión).
+      operationId: perfil_actual_auth_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Perfil'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+      security:
+      - HTTPBearer: []
+  /usuarios/registro:
+    post:
+      tags:
+      - usuarios
+      summary: Registrar un cliente (verifica edad y documento)
+      description: 'HU-10: valida la edad y el documento del usuario al registrarse.
+
+
+        - 403 si es menor de 18 años: no se crea la cuenta (juego responsable).
+
+        - 409 si el documento o el nombre de usuario ya existen.
+
+        - 422 si el documento no tiene entre 6 y 10 dígitos u otros datos son inválidos.
+
+
+        Los registros públicos siempre crean usuarios con rol `cliente`; el
+
+        personal del casino lo crea la administración.'
+      operationId: registrar_usuario_usuarios_registro_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistroUsuario'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioRegistrado'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '409':
+          description: Conflicto con el estado actual del recurso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /usuarios/{usuario}:
+    get:
+      tags:
+      - usuarios
+      summary: Consultar un usuario
+      description: Un cliente consulta su propio perfil; el personal puede consultar
+        a cualquier cliente.
+      operationId: consultar_usuario_usuarios__usuario__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: usuario
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Usuario
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsuarioRegistrado'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billetera/recarga:
+    post:
+      tags:
+      - billetera
+      summary: Recargar saldo
+      description: 'HU-06: recarga el saldo de la billetera digital.
+
+
+        Los montos negativos o en cero y los medios de pago no válidos se
+
+        rechazan con 422. Un cliente autoexcluido no puede recargar (403).'
+      operationId: recargar_saldo_billetera_recarga_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecargaRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Billetera'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /billetera/validar:
+    get:
+      tags:
+      - billetera
+      summary: Validar saldo en caja
+      description: 'HU-08: valida en caja si el cliente tiene saldo suficiente para
+        una
+
+        operación con fichas por `monto_requerido`. Lo usa el cajero (o el
+
+        gerente); un cliente solo puede validar su propio saldo.'
+      operationId: validar_saldo_billetera_validar_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: cliente_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Código del cliente escaneado en caja (obligatorio para el personal)
+          title: Cliente Id
+        description: Código del cliente escaneado en caja (obligatorio para el personal)
+      - name: monto_requerido
+        in: query
+        required: false
+        schema:
+          type: number
+          minimum: 0.0
+          description: Monto en fichas que el cajero necesita autorizar
+          default: 0.0
+          title: Monto Requerido
+        description: Monto en fichas que el cajero necesita autorizar
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidacionSaldo'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billetera/reportes:
+    get:
+      tags:
+      - billetera
+      summary: Reporte de transacciones (CSV)
+      description: 'HU-12: genera un reporte exportable (CSV) de las recargas y
+
+        transacciones, para que el gerente de operaciones audite el flujo de
+
+        caja digital. Se puede filtrar por rango de fechas.'
+      operationId: generar_reporte_billetera_reportes_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: fecha_inicio
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: Filtra transacciones desde esta fecha (YYYY-MM-DD)
+          title: Fecha Inicio
+        description: Filtra transacciones desde esta fecha (YYYY-MM-DD)
+      - name: fecha_fin
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: Filtra transacciones hasta esta fecha (YYYY-MM-DD)
+          title: Fecha Fin
+        description: Filtra transacciones hasta esta fecha (YYYY-MM-DD)
+      responses:
+        '200':
+          description: Archivo CSV con las transacciones del periodo.
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            text/csv:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            text/csv:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billetera/{cliente_id}:
+    get:
+      tags:
+      - billetera
+      summary: Saldo e historial (últimas 20 transacciones)
+      description: 'HU-07: retorna el saldo actual del cliente y sus últimas 20
+
+        transacciones, de la más reciente a la más antigua.'
+      operationId: consultar_saldo_e_historial_billetera__cliente_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: cliente_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cliente Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistorialBilletera'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /fidelidad/acumular:
+    post:
+      tags:
+      - fidelidad
+      summary: Acreditar puntos por un consumo
+      description: 'HU-04: la caja registra un consumo válido y se acreditan los puntos
+
+        automáticamente (1 punto por cada $1.000). Un cliente autoexcluido no
+
+        acumula puntos (403).'
+      operationId: acumular_puntos_fidelidad_acumular_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcumularRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PuntosAcumulados'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /fidelidad/puntos/{cliente_id}:
+    get:
+      tags:
+      - fidelidad
+      summary: Consultar saldo de puntos
+      description: Consulta el saldo de puntos del cliente (0 si aún no ha acumulado).
+      operationId: consultar_puntos_fidelidad_puntos__cliente_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: cliente_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cliente Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaldoPuntos'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /fidelidad/beneficios:
+    get:
+      tags:
+      - fidelidad
+      summary: Catálogo de beneficios
+      description: Catálogo de beneficios canjeables y su costo en puntos.
+      operationId: listar_beneficios_fidelidad_beneficios_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: integer
+                type: object
+                title: Response Listar Beneficios Fidelidad Beneficios Get
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+      security:
+      - HTTPBearer: []
+  /fidelidad/canjear:
+    post:
+      tags:
+      - fidelidad
+      summary: Canjear puntos por un beneficio
+      description: 'HU-05: canjea puntos por un beneficio del catálogo. El costo lo
+        define
+
+        el catálogo del sistema (no el cliente), se descuentan los puntos y se
+
+        genera un cupón digital único.
+
+
+        - 404 si el beneficio no existe.
+
+        - 402 si el cliente no tiene puntos suficientes.'
+      operationId: canjear_beneficio_fidelidad_canjear_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CanjeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanjeConfirmado'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '402':
+          description: Puntos insuficientes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /fidelidad/limite:
+    post:
+      tags:
+      - fidelidad
+      summary: Definir límite de gasto diario
+      description: 'HU-11: el cliente define su límite de gasto diario (juego responsable).'
+      operationId: definir_limite_diario_fidelidad_limite_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LimiteRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LimiteDefinido'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /fidelidad/gasto:
+    post:
+      tags:
+      - fidelidad
+      summary: Registrar un gasto validando el límite diario
+      description: 'HU-11: registra un gasto del día si no supera el límite diario
+        del
+
+        cliente. Si lo supera, responde `permitido: false` y el gasto NO queda
+
+        registrado. Sin límite definido, el gasto siempre se permite.'
+      operationId: registrar_gasto_fidelidad_gasto_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GastoRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GastoResultado'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /fidelidad/autoexclusion:
+    post:
+      tags:
+      - fidelidad
+      summary: Activar autoexclusión voluntaria
+      description: 'HU-11: el cliente establece un periodo de autoexclusión. Una vez
+        activo
+
+        no se puede cancelar ni acortar: si envía un periodo más corto que el
+
+        vigente, se conserva el más largo (sin reversión anticipada).'
+      operationId: establecer_autoexclusion_fidelidad_autoexclusion_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoexclusionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoexclusionConfirmada'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /fidelidad/autoexclusion/{cliente_id}:
+    get:
+      tags:
+      - fidelidad
+      summary: Consultar autoexclusión
+      description: Consulta si el cliente tiene una autoexclusión vigente.
+      operationId: consultar_autoexclusion_fidelidad_autoexclusion__cliente_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: cliente_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cliente Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoAutoexclusion'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /reservas:
+    post:
+      tags:
+      - reservas
+      summary: Reservar una mesa
+      description: "HU-02: bloquea la mesa y devuelve un código de confirmación único.\n\
+        \n- 403 si el cliente está autoexcluido.\n- 404 si la mesa no existe.\n- 409\
+        \ si la mesa no está disponible a esa hora o ya fue reservada\n  para esa\
+        \ fecha y hora (también ante peticiones simultáneas).\n- 422 si la fecha ya\
+        \ pasó o la hora no tiene el formato HH:MM."
+      operationId: crear_reserva_reservas_post
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservaRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '409':
+          description: Conflicto con el estado actual del recurso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - reservas
+      summary: Reservas del día (vista del anfitrión)
+      description: 'US-003: el anfitrión ve las reservas (opcionalmente de un día)
+        ordenadas por hora.'
+      operationId: listar_reservas_reservas_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: fecha
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          description: Filtra por fecha YYYY-MM-DD
+          title: Fecha
+        description: Filtra por fecha YYYY-MM-DD
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Reserva'
+                title: Response Listar Reservas Reservas Get
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /reservas/mias:
+    get:
+      tags:
+      - reservas
+      summary: Mis reservas
+      description: Reservas del cliente autenticado, la más próxima primero.
+      operationId: mis_reservas_reservas_mias_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Reserva'
+                type: array
+                title: Response Mis Reservas Reservas Mias Get
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+      security:
+      - HTTPBearer: []
+  /reservas/checkin:
+    post:
+      tags:
+      - reservas
+      summary: Check-in de una reserva
+      description: 'HU-03: el anfitrión escanea/ingresa el código de confirmación
+        y la
+
+        reserva pasa a ''en_curso''.
+
+
+        - 404 si el código no existe.
+
+        - 409 si ya se hizo check-in.'
+      operationId: hacer_checkin_reservas_checkin_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckInRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '409':
+          description: Conflicto con el estado actual del recurso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /reservas/{codigo}:
+    get:
+      tags:
+      - reservas
+      summary: Consultar una reserva por código
+      description: Un cliente solo ve sus reservas; el personal puede ver cualquiera.
+      operationId: consultar_reserva_reservas__codigo__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: codigo
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Codigo
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Reserva'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /notificaciones/enviar:
+    post:
+      tags:
+      - notificaciones
+      summary: Enviar una notificación push a un cliente
+      description: 'Envía una notificación push al cliente (promoción, vencimiento
+        de
+
+        puntos o reserva próxima). Las promociones NO se envían a clientes
+
+        autoexcluidos (409), por juego responsable.'
+      operationId: enviar_notificacion_notificaciones_enviar_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnvioRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notificacion'
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '409':
+          description: Conflicto con el estado actual del recurso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /notificaciones/reservas-proximas:
+    post:
+      tags:
+      - notificaciones
+      summary: Enviar recordatorios de reservas próximas
+      description: 'Envía un recordatorio a cada cliente con una reserva confirmada
+        que
+
+        empieza dentro de la ventana indicada y que aún no fue notificado.
+
+        Pensado para ejecutarse periódicamente (cron/scheduler).'
+      operationId: notificar_reservas_proximas_notificaciones_reservas_proximas_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: horas
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 48
+          minimum: 1
+          description: Ventana en horas hacia adelante
+          default: 2
+          title: Horas
+        description: Ventana en horas hacia adelante
+      - name: ahora
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          description: Momento de referencia en hora del casino (por defecto, ahora)
+          title: Ahora
+        description: Momento de referencia en hora del casino (por defecto, ahora)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notificacion'
+                title: Response Notificar Reservas Proximas Notificaciones Reservas
+                  Proximas Post
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /notificaciones/{cliente_id}:
+    get:
+      tags:
+      - notificaciones
+      summary: Historial de notificaciones de un cliente
+      description: Historial de notificaciones del cliente, la más reciente primero.
+      operationId: listar_notificaciones_notificaciones__cliente_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: cliente_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Cliente Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notificacion'
+                title: Response Listar Notificaciones Notificaciones  Cliente Id  Get
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '403':
+          description: 'Sin permiso: rol no autorizado, cuenta de otro cliente, menor
+            de edad o cliente autoexcluido.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '404':
+          description: Recurso no encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /:
+    get:
+      tags:
+      - sistema
+      summary: Estado de la API
+      description: Endpoint básico para confirmar que la API está corriendo.
+      operationId: read_root__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstadoApi'
+  /health:
+    get:
+      tags:
+      - sistema
+      summary: Health check
+      description: Health check usado por Docker Compose, el CI y el smoke test.
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Salud'
+  /disponibilidad:
+    get:
+      tags:
+      - reservas
+      summary: Consultar disponibilidad de mesas
+      description: 'HU-01: Consulta de disponibilidad en tiempo real (REQ-FUNC-001).
+
+
+        Retorna las mesas disponibles para la fecha y hora solicitadas:
+
+        estado ''disponible'', misma franja horaria y sin reserva ese día.'
+      operationId: consultar_disponibilidad_disponibilidad_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: fecha
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+          description: Fecha de la reserva, formato YYYY-MM-DD
+          title: Fecha
+        description: Fecha de la reserva, formato YYYY-MM-DD
+      - name: hora
+        in: query
+        required: true
+        schema:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          description: Hora deseada, formato HH:MM
+          title: Hora
+        description: Hora deseada, formato HH:MM
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Mesa'
+                title: Response Consultar Disponibilidad Disponibilidad Get
+        '401':
+          description: 'No autenticado: falta el token, es inválido o expiró.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRespuesta'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    AcumularRequest:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+          description: Cliente al que se le acreditan los puntos
+        monto_gastado:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Monto Gastado
+          description: Monto del consumo en pesos
+      type: object
+      required:
+      - cliente_id
+      - monto_gastado
+      title: AcumularRequest
+    AutoexclusionConfirmada:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        bloqueado_hasta:
+          type: string
+          format: date
+          title: Bloqueado Hasta
+      type: object
+      required:
+      - cliente_id
+      - bloqueado_hasta
+      title: AutoexclusionConfirmada
+    AutoexclusionRequest:
+      properties:
+        dias:
+          type: integer
+          maximum: 3650.0
+          exclusiveMinimum: 0.0
+          title: Dias
+          description: Duración del bloqueo en días
+      type: object
+      required:
+      - dias
+      title: AutoexclusionRequest
+    Billetera:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        saldo:
+          type: number
+          title: Saldo
+      type: object
+      required:
+      - cliente_id
+      - saldo
+      title: Billetera
+    CanjeConfirmado:
+      properties:
+        cupon:
+          type: string
+          title: Cupon
+        beneficio:
+          type: string
+          title: Beneficio
+        puntos_usados:
+          type: integer
+          title: Puntos Usados
+        puntos_restantes:
+          type: integer
+          title: Puntos Restantes
+      type: object
+      required:
+      - cupon
+      - beneficio
+      - puntos_usados
+      - puntos_restantes
+      title: CanjeConfirmado
+    CanjeRequest:
+      properties:
+        cliente_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cliente Id
+        beneficio:
+          type: string
+          title: Beneficio
+          description: Clave del beneficio del catálogo
+      type: object
+      required:
+      - beneficio
+      title: CanjeRequest
+    CheckInRequest:
+      properties:
+        codigo_confirmacion:
+          type: string
+          maxLength: 20
+          minLength: 1
+          title: Codigo Confirmacion
+      type: object
+      required:
+      - codigo_confirmacion
+      title: CheckInRequest
+    EnvioRequest:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        tipo:
+          $ref: '#/components/schemas/TipoNotificacion'
+        mensaje:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Mensaje
+      type: object
+      required:
+      - cliente_id
+      - tipo
+      title: EnvioRequest
+    ErrorRespuesta:
+      properties:
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - detail
+      title: ErrorRespuesta
+    EstadoApi:
+      properties:
+        status:
+          type: string
+          title: Status
+        app:
+          type: string
+          title: App
+      type: object
+      required:
+      - status
+      - app
+      title: EstadoApi
+    EstadoAutoexclusion:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        activa:
+          type: boolean
+          title: Activa
+        bloqueado_hasta:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Bloqueado Hasta
+      type: object
+      required:
+      - cliente_id
+      - activa
+      title: EstadoAutoexclusion
+    EstadoMesa:
+      type: string
+      enum:
+      - disponible
+      - reservada
+      - ocupada
+      title: EstadoMesa
+    EstadoReserva:
+      type: string
+      enum:
+      - confirmada
+      - en_curso
+      title: EstadoReserva
+    GastoRequest:
+      properties:
+        cliente_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cliente Id
+        monto:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Monto
+      type: object
+      required:
+      - monto
+      title: GastoRequest
+    GastoResultado:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        permitido:
+          type: boolean
+          title: Permitido
+        gastado_hoy:
+          type: number
+          title: Gastado Hoy
+        limite_diario:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Limite Diario
+        mensaje:
+          type: string
+          title: Mensaje
+      type: object
+      required:
+      - cliente_id
+      - permitido
+      - gastado_hoy
+      - mensaje
+      title: GastoResultado
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HistorialBilletera:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        saldo:
+          type: number
+          title: Saldo
+        transacciones:
+          items:
+            $ref: '#/components/schemas/Transaccion'
+          type: array
+          title: Transacciones
+      type: object
+      required:
+      - cliente_id
+      - saldo
+      - transacciones
+      title: HistorialBilletera
+    LimiteDefinido:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        limite_diario:
+          type: number
+          title: Limite Diario
+      type: object
+      required:
+      - cliente_id
+      - limite_diario
+      title: LimiteDefinido
+    LimiteRequest:
+      properties:
+        cliente_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cliente Id
+        limite_diario:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Limite Diario
+          description: Gasto máximo permitido por día
+      type: object
+      required:
+      - limite_diario
+      title: LimiteRequest
+    LoginRequest:
+      properties:
+        usuario:
+          type: string
+          minLength: 1
+          title: Usuario
+          description: Nombre de usuario
+        password:
+          type: string
+          minLength: 1
+          title: Password
+      type: object
+      required:
+      - usuario
+      - password
+      title: LoginRequest
+    Mesa:
+      properties:
+        id:
+          type: integer
+          title: Id
+        capacidad:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Capacidad
+          description: Número máximo de personas que soporta la mesa
+        estado:
+          $ref: '#/components/schemas/EstadoMesa'
+          default: disponible
+        horario:
+          type: string
+          title: Horario
+          description: Franja horaria a la que aplica este estado, formato 'HH:MM'
+      type: object
+      required:
+      - id
+      - capacidad
+      - horario
+      title: Mesa
+    Notificacion:
+      properties:
+        id:
+          type: integer
+          title: Id
+        cliente_id:
+          type: string
+          title: Cliente Id
+        tipo:
+          $ref: '#/components/schemas/TipoNotificacion'
+        mensaje:
+          type: string
+          title: Mensaje
+        canal:
+          type: string
+          title: Canal
+          default: push
+        estado:
+          type: string
+          title: Estado
+          default: enviada
+        enviada_en:
+          type: string
+          format: date-time
+          title: Enviada En
+      type: object
+      required:
+      - id
+      - cliente_id
+      - tipo
+      - mensaje
+      - enviada_en
+      title: Notificacion
+    Perfil:
+      properties:
+        usuario:
+          type: string
+          title: Usuario
+        nombre:
+          type: string
+          title: Nombre
+        rol:
+          type: string
+          title: Rol
+      type: object
+      required:
+      - usuario
+      - nombre
+      - rol
+      title: Perfil
+    PuntosAcumulados:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        puntos_ganados:
+          type: integer
+          title: Puntos Ganados
+        puntos_totales:
+          type: integer
+          title: Puntos Totales
+      type: object
+      required:
+      - cliente_id
+      - puntos_ganados
+      - puntos_totales
+      title: PuntosAcumulados
+    RecargaRequest:
+      properties:
+        cliente_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cliente Id
+          description: Solo para el personal (recarga en caja); el cliente recarga
+            la suya
+        monto:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Monto
+          description: Monto a recargar; debe ser mayor a 0
+        metodo_pago:
+          type: string
+          enum:
+          - tarjeta
+          - pse
+          - efectivo
+          title: Metodo Pago
+      type: object
+      required:
+      - monto
+      - metodo_pago
+      title: RecargaRequest
+    RegistroUsuario:
+      properties:
+        nombre:
+          type: string
+          maxLength: 120
+          minLength: 2
+          title: Nombre
+        usuario:
+          type: string
+          title: Usuario
+          description: 'Nombre de usuario: 3 a 30 caracteres [a-z0-9_.-]'
+        password:
+          type: string
+          maxLength: 72
+          minLength: 8
+          title: Password
+        documento:
+          type: string
+          title: Documento
+        fecha_nacimiento:
+          type: string
+          format: date
+          title: Fecha Nacimiento
+      type: object
+      required:
+      - nombre
+      - usuario
+      - password
+      - documento
+      - fecha_nacimiento
+      title: RegistroUsuario
+    Reserva:
+      properties:
+        codigo_confirmacion:
+          type: string
+          title: Codigo Confirmacion
+        mesa_id:
+          type: integer
+          title: Mesa Id
+        fecha:
+          type: string
+          format: date
+          title: Fecha
+        hora:
+          type: string
+          title: Hora
+        cliente_id:
+          type: string
+          title: Cliente Id
+        estado:
+          $ref: '#/components/schemas/EstadoReserva'
+          default: confirmada
+        recordatorio_enviado:
+          type: boolean
+          title: Recordatorio Enviado
+          default: false
+        creada_en:
+          type: string
+          format: date-time
+          title: Creada En
+        check_in_en:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Check In En
+      type: object
+      required:
+      - codigo_confirmacion
+      - mesa_id
+      - fecha
+      - hora
+      - cliente_id
+      - creada_en
+      title: Reserva
+    ReservaRequest:
+      properties:
+        cliente_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cliente Id
+          description: Solo para el personal (reserva telefónica); el cliente reserva
+            a su nombre
+        mesa_id:
+          type: integer
+          title: Mesa Id
+        fecha:
+          type: string
+          format: date
+          title: Fecha
+        hora:
+          type: string
+          pattern: ^([01]\d|2[0-3]):[0-5]\d$
+          title: Hora
+          description: Hora de la reserva, formato HH:MM
+      type: object
+      required:
+      - mesa_id
+      - fecha
+      - hora
+      title: ReservaRequest
+    SaldoPuntos:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        puntos:
+          type: integer
+          title: Puntos
+      type: object
+      required:
+      - cliente_id
+      - puntos
+      title: SaldoPuntos
+    Salud:
+      properties:
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - status
+      title: Salud
+    TipoNotificacion:
+      type: string
+      enum:
+      - reserva_proxima
+      - promocion
+      - vencimiento_puntos
+      title: TipoNotificacion
+    Token:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        usuario:
+          type: string
+          title: Usuario
+        nombre:
+          type: string
+          title: Nombre
+        rol:
+          type: string
+          title: Rol
+      type: object
+      required:
+      - access_token
+      - usuario
+      - nombre
+      - rol
+      title: Token
+    Transaccion:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        tipo:
+          type: string
+          title: Tipo
+        monto:
+          type: number
+          title: Monto
+        saldo_resultante:
+          type: number
+          title: Saldo Resultante
+        fecha:
+          type: string
+          format: date-time
+          title: Fecha
+      type: object
+      required:
+      - cliente_id
+      - tipo
+      - monto
+      - saldo_resultante
+      - fecha
+      title: Transaccion
+    UsuarioRegistrado:
+      properties:
+        usuario:
+          type: string
+          title: Usuario
+        nombre:
+          type: string
+          title: Nombre
+        documento:
+          type: string
+          title: Documento
+        edad:
+          type: integer
+          title: Edad
+        rol:
+          type: string
+          title: Rol
+        cuenta_activa:
+          type: boolean
+          title: Cuenta Activa
+      type: object
+      required:
+      - usuario
+      - nombre
+      - documento
+      - edad
+      - rol
+      - cuenta_activa
+      title: UsuarioRegistrado
+    ValidacionSaldo:
+      properties:
+        cliente_id:
+          type: string
+          title: Cliente Id
+        saldo_disponible:
+          type: number
+          title: Saldo Disponible
+        monto_requerido:
+          type: number
+          title: Monto Requerido
+        valido:
+          type: boolean
+          title: Valido
+      type: object
+      required:
+      - cliente_id
+      - saldo_disponible
+      - monto_requerido
+      - valido
+      title: ValidacionSaldo
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      description: Token JWT obtenido en POST /auth/login
+      scheme: bearer
