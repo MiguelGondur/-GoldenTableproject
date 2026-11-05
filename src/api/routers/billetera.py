@@ -1,36 +1,49 @@
 """
-Endpoints de Billetera Digital.
+Endpoints de la Billetera Digital.
 
 HU-06: Recarga de saldo (REQ-FUNC-006)
 HU-07: Consulta de saldo e historial (REQ-FUNC-007)
 HU-08: Validación de saldo en caja (REQ-FUNC-008)
-HU-12: Reportes de recargas y transacciones (REQ-FUNC-012)
+HU-12: Reportes de transacciones en CSV (REQ-FUNC-012)
 """
 
 import csv
 import io
 from datetime import date as date_type
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
+from decimal import Decimal
+from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from src.api.auth import ANFITRION, CAJERO, GERENTE, requiere_roles, resolver_cliente, usuario_actual
+from src.api.db import get_db
+from src.api.errores import errores
+from src.api.orm import Billetera as BilleteraDB
+from src.api.orm import Transaccion as TransaccionDB
+from src.api.orm import Usuario
 from src.api.seguridad import verificar_autoexclusion
 
 router = APIRouter(prefix="/billetera", tags=["billetera"])
 
-# Almacenamiento en memoria — placeholder hasta integrar base de datos real.
-BILLETERAS_DB: dict[str, float] = {}
-# Historial de transacciones por cliente, más reciente al final.
-TRANSACCIONES_DB: dict[str, list["Transaccion"]] = {}
 MAX_TRANSACCIONES_HISTORIAL = 20
 
 
+class CSVResponse(StreamingResponse):
+    """Respuesta CSV (documenta text/csv en OpenAPI en lugar de application/json)."""
+
+    media_type = "text/csv"
+
+
 class RecargaRequest(BaseModel):
-    cliente_id: str
+    cliente_id: str | None = Field(
+        default=None, description="Solo para el personal (recarga en caja); el cliente recarga la suya"
+    )
     monto: float = Field(..., gt=0, description="Monto a recargar; debe ser mayor a 0")
-    metodo_pago: str
+    metodo_pago: Literal["tarjeta", "pse", "efectivo"]
 
 
 class Billetera(BaseModel):
@@ -59,56 +72,102 @@ class ValidacionSaldo(BaseModel):
     valido: bool
 
 
-@router.post("/recarga", response_model=Billetera)
-def recargar_saldo(datos: RecargaRequest):
-    """
-    HU-06: recarga el saldo de la billetera digital del cliente.
-
-    Los montos negativos o en cero son rechazados automáticamente por
-    la validación `gt=0` del campo `monto` (FastAPI responde HTTP 422).
-    """
-    verificar_autoexclusion(datos.cliente_id)
-    saldo_actual = BILLETERAS_DB.get(datos.cliente_id, 0.0)
-    nuevo_saldo = saldo_actual + datos.monto
-    BILLETERAS_DB[datos.cliente_id] = nuevo_saldo
-
-    transaccion = Transaccion(
-        cliente_id=datos.cliente_id,
-        tipo="recarga",
-        monto=datos.monto,
-        saldo_resultante=nuevo_saldo,
-        fecha=datetime.now(timezone.utc),
+def _a_transaccion(t: TransaccionDB) -> Transaccion:
+    return Transaccion(
+        cliente_id=t.cliente_id,
+        tipo=t.tipo,
+        monto=float(t.monto),
+        saldo_resultante=float(t.saldo_resultante),
+        fecha=t.fecha,
     )
-    TRANSACCIONES_DB.setdefault(datos.cliente_id, []).append(transaccion)
-
-    return Billetera(cliente_id=datos.cliente_id, saldo=nuevo_saldo)
 
 
-@router.get("/validar", response_model=ValidacionSaldo)
+@router.post(
+    "/recarga",
+    response_model=Billetera,
+    summary="Recargar saldo",
+    responses=errores(401, 403, 404),
+)
+def recargar_saldo(
+    datos: RecargaRequest,
+    usuario: Usuario = Depends(usuario_actual),
+    db: Session = Depends(get_db),
+):
+    """
+    HU-06: recarga el saldo de la billetera digital.
+
+    Los montos negativos o en cero y los medios de pago no válidos se
+    rechazan con 422. Un cliente autoexcluido no puede recargar (403).
+    """
+    cliente_id = resolver_cliente(db, usuario, datos.cliente_id)
+    verificar_autoexclusion(db, cliente_id)
+
+    billetera = db.get(BilleteraDB, cliente_id, with_for_update=True)
+    if billetera is None:
+        billetera = BilleteraDB(cliente_id=cliente_id, saldo=Decimal("0"))
+        db.add(billetera)
+    monto = Decimal(str(datos.monto))
+    billetera.saldo = billetera.saldo + monto
+    db.add(
+        TransaccionDB(
+            cliente_id=cliente_id,
+            tipo="recarga",
+            monto=monto,
+            saldo_resultante=billetera.saldo,
+            metodo_pago=datos.metodo_pago,
+            fecha=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+    return Billetera(cliente_id=cliente_id, saldo=float(billetera.saldo))
+
+
+@router.get(
+    "/validar",
+    response_model=ValidacionSaldo,
+    summary="Validar saldo en caja",
+    responses=errores(401, 403, 404),
+)
 def validar_saldo(
-    cliente_id: str = Query(..., description="Código del cliente escaneado en caja"),
+    cliente_id: str | None = Query(
+        default=None, description="Código del cliente escaneado en caja (obligatorio para el personal)"
+    ),
     monto_requerido: float = Query(
         default=0.0, ge=0, description="Monto en fichas que el cajero necesita autorizar"
     ),
+    usuario: Usuario = Depends(usuario_actual),
+    db: Session = Depends(get_db),
 ):
     """
     HU-08: valida en caja si el cliente tiene saldo suficiente para una
-    operación con fichas por `monto_requerido`.
-
-    Si el cliente no existe en la billetera aún (no se ha registrado ni
-    recargado), se asume saldo 0 en vez de fallar, para que el cajero
-    reciba una respuesta clara (no autorizado) en lugar de un error.
+    operación con fichas por `monto_requerido`. Lo usa el cajero (o el
+    gerente); un cliente solo puede validar su propio saldo.
     """
-    saldo_actual = BILLETERAS_DB.get(cliente_id, 0.0)
+    if usuario.rol == ANFITRION:
+        raise HTTPException(status_code=403, detail="El anfitrión no valida saldos en caja.")
+    cliente = resolver_cliente(db, usuario, cliente_id)
+    billetera = db.get(BilleteraDB, cliente)
+    saldo = float(billetera.saldo) if billetera else 0.0
     return ValidacionSaldo(
-        cliente_id=cliente_id,
-        saldo_disponible=saldo_actual,
+        cliente_id=cliente,
+        saldo_disponible=saldo,
         monto_requerido=monto_requerido,
-        valido=saldo_actual >= monto_requerido,
+        valido=saldo >= monto_requerido,
     )
 
 
-@router.get("/reportes")
+@router.get(
+    "/reportes",
+    response_class=CSVResponse,
+    summary="Reporte de transacciones (CSV)",
+    responses={
+        200: {
+            "description": "Archivo CSV con las transacciones del periodo.",
+            "content": {"text/csv": {"schema": {"type": "string"}}},
+        },
+        **errores(401, 403),
+    },
+)
 def generar_reporte(
     fecha_inicio: date_type | None = Query(
         default=None, description="Filtra transacciones desde esta fecha (YYYY-MM-DD)"
@@ -116,44 +175,35 @@ def generar_reporte(
     fecha_fin: date_type | None = Query(
         default=None, description="Filtra transacciones hasta esta fecha (YYYY-MM-DD)"
     ),
+    _: Usuario = Depends(requiere_roles(GERENTE)),
+    db: Session = Depends(get_db),
 ):
     """
-    HU-12: genera un reporte exportable (CSV) de todas las recargas y
-    transacciones registradas, para que el gerente de operaciones pueda
-    auditar el flujo de caja digital.
-
-    Se puede filtrar por rango de fechas con `fecha_inicio` y `fecha_fin`;
-    si no se envían, el reporte incluye todas las transacciones.
+    HU-12: genera un reporte exportable (CSV) de las recargas y
+    transacciones, para que el gerente de operaciones audite el flujo de
+    caja digital. Se puede filtrar por rango de fechas.
     """
-    todas_las_transacciones = [
-        transaccion
-        for transacciones_cliente in TRANSACCIONES_DB.values()
-        for transaccion in transacciones_cliente
-    ]
-
+    consulta = db.query(TransaccionDB)
     if fecha_inicio is not None:
-        todas_las_transacciones = [
-            t for t in todas_las_transacciones if t.fecha.date() >= fecha_inicio
-        ]
+        consulta = consulta.filter(
+            TransaccionDB.fecha >= datetime.combine(fecha_inicio, time.min, tzinfo=timezone.utc)
+        )
     if fecha_fin is not None:
-        todas_las_transacciones = [
-            t for t in todas_las_transacciones if t.fecha.date() <= fecha_fin
-        ]
-
-    todas_las_transacciones.sort(key=lambda t: t.fecha)
+        consulta = consulta.filter(
+            TransaccionDB.fecha <= datetime.combine(fecha_fin, time.max, tzinfo=timezone.utc)
+        )
 
     buffer = io.StringIO()
     escritor = csv.writer(buffer)
     escritor.writerow(["cliente_id", "tipo", "monto", "saldo_resultante", "fecha"])
-    for t in todas_las_transacciones:
+    for t in consulta.order_by(TransaccionDB.fecha, TransaccionDB.id):
         escritor.writerow(
-            [t.cliente_id, t.tipo, t.monto, t.saldo_resultante, t.fecha.isoformat()]
+            [t.cliente_id, t.tipo, float(t.monto), float(t.saldo_resultante), t.fecha.isoformat()]
         )
     buffer.seek(0)
 
-    return StreamingResponse(
+    return CSVResponse(
         buffer,
-        media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=reporte_billetera.csv"},
     )
 
@@ -161,22 +211,35 @@ def generar_reporte(
 # IMPORTANTE: esta ruta debe declararse DESPUÉS de "/validar" y "/reportes". Al tener un
 # parámetro dinámico ({cliente_id}), FastAPI la usaría para *cualquier*
 # texto en esa posición — incluida la palabra "validar" — si quedara antes.
-@router.get("/{cliente_id}", response_model=HistorialBilletera)
-def consultar_saldo_e_historial(cliente_id: str):
+@router.get(
+    "/{cliente_id}",
+    response_model=HistorialBilletera,
+    summary="Saldo e historial (últimas 20 transacciones)",
+    responses=errores(401, 403, 404),
+)
+def consultar_saldo_e_historial(
+    cliente_id: str,
+    usuario: Usuario = Depends(usuario_actual),
+    db: Session = Depends(get_db),
+):
     """
     HU-07: retorna el saldo actual del cliente y sus últimas 20
-    transacciones (recargas), de la más reciente a la más antigua.
+    transacciones, de la más reciente a la más antigua.
     """
-    if cliente_id not in BILLETERAS_DB:
-        raise HTTPException(
-            status_code=404, detail="El cliente no tiene una billetera registrada"
-        )
+    cliente = resolver_cliente(db, usuario, cliente_id)
+    billetera = db.get(BilleteraDB, cliente)
+    if billetera is None:
+        raise HTTPException(status_code=404, detail="El cliente no tiene una billetera registrada")
 
-    historial = TRANSACCIONES_DB.get(cliente_id, [])
-    ultimas_20 = list(reversed(historial))[:MAX_TRANSACCIONES_HISTORIAL]
-
+    ultimas = (
+        db.query(TransaccionDB)
+        .filter(TransaccionDB.cliente_id == cliente)
+        .order_by(TransaccionDB.fecha.desc(), TransaccionDB.id.desc())
+        .limit(MAX_TRANSACCIONES_HISTORIAL)
+        .all()
+    )
     return HistorialBilletera(
-        cliente_id=cliente_id,
-        saldo=BILLETERAS_DB[cliente_id],
-        transacciones=ultimas_20,
+        cliente_id=cliente,
+        saldo=float(billetera.saldo),
+        transacciones=[_a_transaccion(t) for t in ultimas],
     )

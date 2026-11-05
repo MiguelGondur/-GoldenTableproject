@@ -1,5 +1,5 @@
 """
-Modelos de datos del dominio de GoldenTable.
+Esquemas (Pydantic) de la API de GoldenTable.
 
 HU-01 (REQ-FUNC-001): Mesa y su estado base.
 HU-02 / HU-03 (REQ-FUNC-002, REQ-FUNC-003): Reserva y su ciclo de vida.
@@ -9,7 +9,7 @@ HU-09 (REQ-FUNC-009): Notificación push.
 from datetime import date, datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Formato de hora 24h "HH:MM" (00:00 a 23:59), usado en mesas, reservas y consultas.
 PATRON_HORA = r"^([01]\d|2[0-3]):[0-5]\d$"
@@ -22,6 +22,8 @@ class EstadoMesa(str, Enum):
 
 
 class Mesa(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     capacidad: int = Field(..., gt=0, description="Número máximo de personas que soporta la mesa")
     estado: EstadoMesa = EstadoMesa.DISPONIBLE
@@ -34,6 +36,8 @@ class EstadoReserva(str, Enum):
 
 
 class Reserva(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     codigo_confirmacion: str
     mesa_id: int
     fecha: date
@@ -52,6 +56,8 @@ class TipoNotificacion(str, Enum):
 
 
 class Notificacion(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     cliente_id: str
     tipo: TipoNotificacion

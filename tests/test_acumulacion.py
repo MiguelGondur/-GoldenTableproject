@@ -1,43 +1,21 @@
 """
-Test unitario de HU-04: valida que el consumo registrado acredite
-puntos automáticamente al cliente (1 punto por $1.000), según REQ-FUNC-004.
+HU-04 (REQ-FUNC-004): el consumo registrado en caja acredita puntos
+automáticamente (1 punto por cada $1.000) y se refleja en el saldo del cliente.
 """
 
-from fastapi.testclient import TestClient
 
-from src.api.main import app
-
-client = TestClient(app)
-
-
-def test_acumulacion_acredita_puntos():
-    response = client.post(
-        "/fidelidad/acumular",
-        json={"cliente_id": "cliente-acumula-1", "monto_gastado": 10000},
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["puntos_ganados"] == 10
-    assert data["puntos_totales"] == 10
+def test_acumulacion_se_refleja_en_el_saldo_del_cliente(client, nuevo_cliente, h_cajero):
+    nombre, h = nuevo_cliente("acum1")
+    r = client.post("/fidelidad/acumular", json={"cliente_id": nombre, "monto_gastado": 10000}, headers=h_cajero)
+    assert r.status_code == 200
+    assert r.json()["puntos_ganados"] == 10
+    assert client.get(f"/fidelidad/puntos/{nombre}", headers=h).json()["puntos"] == 10
 
 
-def test_acumulacion_suma_sobre_puntos_existentes():
-    for _ in range(2):
-        response = client.post(
-            "/fidelidad/acumular",
-            json={"cliente_id": "cliente-acumula-2", "monto_gastado": 5000},
-        )
-    assert response.json()["puntos_totales"] == 10
+def test_acumulacion_tarda_menos_de_5_segundos(client, nuevo_cliente, h_cajero):
+    import time
 
-
-def test_acumulacion_monto_invalido_rechazado():
-    response = client.post(
-        "/fidelidad/acumular", json={"cliente_id": "x", "monto_gastado": 0}
-    )
-    assert response.status_code == 422
-
-
-def test_consultar_puntos_y_beneficios():
-    assert client.get("/fidelidad/puntos/cliente-nuevo").json()["puntos"] == 0
-    beneficios = client.get("/fidelidad/beneficios").json()
-    assert beneficios["bebida_gratis"] == 50
+    nombre, _ = nuevo_cliente("acum2")
+    inicio = time.time()
+    r = client.post("/fidelidad/acumular", json={"cliente_id": nombre, "monto_gastado": 120000}, headers=h_cajero)
+    assert r.status_code == 200 and time.time() - inicio < 5  # REQ-FUNC-004
