@@ -59,7 +59,7 @@ sequenceDiagram
 
     C->>F: Clic en "Reservar" (mesa 6)
     F->>A: POST /reservas {mesa_id, fecha, hora} (Bearer token)
-    A->>A: valida JWT y rol; verifica autoexclusión
+    A->>A: valida JWT y rol, verifica autoexclusión
     A->>S: crear reserva
     S->>DB: INSERT reserva (restricción única mesa+fecha+hora)
     alt la mesa sigue libre
@@ -124,7 +124,7 @@ sequenceDiagram
     F->>A: POST /fidelidad/acumular {cliente_id, monto_gastado} (Bearer cajero)
     A->>A: valida JWT y rol cajero/gerente
     A->>S: acreditar (1 punto por $1.000)
-    S->>DB: verifica autoexclusión; UPDATE puntos = puntos + 120 (FOR UPDATE)
+    S->>DB: verifica autoexclusión, UPDATE puntos = puntos + 120 (FOR UPDATE)
     A-->>F: 200 OK {puntos_ganados: 120, puntos_totales}
     F-->>K: Confirmación
 
@@ -133,7 +133,7 @@ sequenceDiagram
     A->>S: canjear
     S->>DB: SELECT puntos FOR UPDATE
     alt puntos suficientes
-        S->>DB: UPDATE puntos - costo; INSERT canje (cupón)
+        S->>DB: UPDATE puntos - costo, INSERT canje (cupón)
         A-->>F: 200 OK {cupon, puntos_restantes}
         F-->>C: Muestra el cupón digital
     else puntos insuficientes
@@ -157,7 +157,7 @@ sequenceDiagram
     C->>F: Recarga $50.000 con tarjeta
     F->>A: POST /billetera/recarga {monto, metodo_pago} (Bearer cliente)
     A->>S: recargar
-    S->>DB: verifica autoexclusión; UPDATE saldo (FOR UPDATE); INSERT transacción
+    S->>DB: verifica autoexclusión, UPDATE saldo (FOR UPDATE), INSERT transacción
     alt monto válido y cliente activo
         A-->>F: 200 OK {saldo}
     else monto <= 0 o medio de pago inválido
@@ -197,7 +197,7 @@ sequenceDiagram
     A->>S: buscar reservas próximas
     S->>DB: SELECT reservas confirmadas sin recordatorio en la ventana
     loop por cada reserva
-        S->>DB: INSERT notificación; UPDATE recordatorio_enviado = true
+        S->>DB: INSERT notificación, UPDATE recordatorio_enviado = true
         S->>P: push al cliente (registro en el log)
     end
     A-->>F: 200 OK [notificaciones enviadas]
