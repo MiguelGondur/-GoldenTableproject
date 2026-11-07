@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0b0f">
+<title>GoldenTable · Casino</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ===== Pantalla de acceso ===== -->
+<div id="vista-login" class="login-wrap">
+  <div class="login-card">
+    <div class="logo grande">♠</div>
+    <h1>GoldenTable</h1>
+    <p class="lema">Casino · Reservas · Fidelidad</p>
+
+    <div class="tabs-mini">
+      <button id="t-entrar" class="on" type="button">Iniciar sesión</button>
+      <button id="t-crear" type="button">Crear cuenta</button>
+    </div>
+
+    <form id="f-login" autocomplete="on">
+      <label for="l-user">Usuario</label>
+      <input id="l-user" name="usuario" autocomplete="username" required>
+      <label for="l-pass">Contraseña</label>
+      <input id="l-pass" name="password" type="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">Entrar</button>
+    </form>
+
+    <form id="f-registro" hidden autocomplete="off">
+      <label for="r-nombre">Nombre completo</label>
+      <input id="r-nombre" required minlength="2">
+      <div class="row">
+        <div><label for="r-user">Usuario</label><input id="r-user" required minlength="3" maxlength="30" placeholder="ej. ana.perez"></div>
+        <div><label for="r-doc">Documento</label><input id="r-doc" required inputmode="numeric" placeholder="6 a 10 dígitos"></div>
+      </div>
+      <label for="r-nac">Fecha de nacimiento (mayores de 18)</label>
+      <input id="r-nac" type="date" required>
+      <label for="r-pass">Contraseña (mínimo 8 caracteres)</label>
+      <input id="r-pass" type="password" required minlength="8" autocomplete="new-password">
+      <button class="btn" type="submit">Crear cuenta</button>
+    </form>
+
+    <details class="demo">
+      <summary>Usuarios de prueba</summary>
+      <p>Contraseña de todos: <code>Casino2026!</code></p>
+      <div class="chips" id="demo-chips"></div>
+    </details>
+    <p class="aviso">Solo para mayores de 18 años. Juega con responsabilidad.</p>
+  </div>
+</div>
+
+<!-- ===== Aplicación ===== -->
+<div id="vista-app" hidden>
+  <header>
+    <div class="brand"><div class="logo">♠</div><div><h1>GoldenTable</h1><small id="subtitulo">Casino</small></div></div>
+    <div class="usuario">
+      <span id="quien"></span>
+      <button class="btn ghost sm" id="salir" type="button">Cerrar sesión</button>
+    </div>
+  </header>
+  <nav id="nav" aria-label="Secciones"></nav>
+  <main id="contenido"></main>
+  <footer>GoldenTable · Ingeniería de Software, UPB · <a id="enlace-docs" href="#" target="_blank" rel="noopener">Documentación de la API</a><br>El juego debe ser divertido y responsable. Solo para mayores de 18 años.</footer>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
